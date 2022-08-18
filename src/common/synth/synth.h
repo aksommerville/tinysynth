@@ -12,7 +12,11 @@ void synth_init(uint32_t rate);
 
 void synth_update(int16_t *v,int c);
 
-void synth_event_system(uint8_t e);
+void synth_reset();
+void synth_silence();
+void synth_release_all();
+
+void synth_event_realtime(uint8_t e);
 void synth_event_note_off(uint8_t chid,uint8_t noteid,uint8_t velocity);
 void synth_event_note_on(uint8_t chid,uint8_t noteid,uint8_t velocity);
 void synth_event_note_adjust(uint8_t chid,uint8_t noteid,uint8_t velocity);

@@ -97,7 +97,7 @@ static void render() {
   }
 }
 
-#define synth_event_system(v) { console_print("sys %B",v); synth_event_system(v); }
+#define synth_event_realtime(v) { console_print("sys %B",v); synth_event_realtime(v); }
 #define synth_event_note_off(chid,noteid,velocity) { console_print("off %B %B %B",chid,noteid,velocity); synth_event_note_off(chid,noteid,velocity); }
 #define synth_event_note_on(chid,noteid,velocity) { console_print("on %B %B %B",chid,noteid,velocity); synth_event_note_on(chid,noteid,velocity); }
 #define synth_event_note_adjust(chid,noteid,velocity) { console_print("adj %B %B %B",chid,noteid,velocity); synth_event_note_adjust(chid,noteid,velocity); }
@@ -109,8 +109,9 @@ static void render() {
 static void receive_byte(uint8_t src) {
 
   // Top four bits set, it's a system event, interrupts regular events.
+  // ...well technically, it's 0xf8..0xff the real-time ones. 0xf0..0xf7 are different.
   if (src>=0xf0) {
-    synth_event_system(src);
+    synth_event_realtime(src);
     return;
   }
 
@@ -137,26 +138,16 @@ static void receive_byte(uint8_t src) {
 
 void loop() {
 
+  int16_t *buf=0;
+  uint16_t bufc=tinysynth_platform_get_audio_buffer(&buf);
+  synth_update(buf,bufc);
+  tinysynth_platform_filled_audio_buffer(buf,bufc);
+
   uint8_t input=tinysynth_platform_read_input();
   if (input!=pvinput) {
     console_print("input %B",input);
     pvinput=input;
   }
-  
-  /* Works but there seems to be a pretty substantial timeout. *
-  uint8_t src[16];
-  int srcc=usb_read(src,sizeof(src));
-  if (srcc>0) {
-    console_print("usb %B %B %B %B %B %B",src[0],src[1],src[2],src[3],src[4],src[5]);
-  }
-  /**/
-  
-  /* Works lickety-quick. Even when there's nothing to read, seems to time out real fast. *
-  int src=usb_read_byte();
-  if (src>=0) {
-    console_print("usb %B",src);
-  }
-  /**/
   
   int src;
   while ((src=usb_read_byte())>=0) receive_byte(src);

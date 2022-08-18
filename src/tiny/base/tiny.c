@@ -147,18 +147,27 @@ static void tiny_audio_init() {
 
 /* Update audio -- refill buffer if needed.
  */
- 
-#define FMN_AUDIO_BUFFER_SIZE 128
 
-static int16_t fmn_audio_buffer[FMN_AUDIO_BUFFER_SIZE]={0};
-static int16_t fmn_audio_bufferp=0;
-static uint8_t fmn_audio_buffer_front=0,fmn_audio_buffer_back=0;
+// Buffer must be comfortably longer than a video frame (~367)
+#define FMN_AUDIO_BUFFER_SIZE 512
 
-static int16_t audio_next() {
-  int16_t v=0;
-  synth_update(&v,1);
-  //TODO use buffer
-  return v;
+static int16_t fmn_abuf[FMN_AUDIO_BUFFER_SIZE]={0};
+
+// (rp==wp) means empty.
+static uint16_t fmn_abuf_rp=0,fmn_abuf_wp=0;
+
+uint16_t tinysynth_platform_get_audio_buffer(int16_t **dstpp) {
+  uint16_t p=fmn_abuf_wp;
+  if (p>=FMN_AUDIO_BUFFER_SIZE) p=0;
+  *dstpp=fmn_abuf+p;
+  if (fmn_abuf_rp>p) return fmn_abuf_rp-p;
+  return FMN_AUDIO_BUFFER_SIZE-p;
+}
+
+void tinysynth_platform_filled_audio_buffer(int16_t *v,uint16_t c) {
+  if (fmn_abuf_wp>=FMN_AUDIO_BUFFER_SIZE) fmn_abuf_wp=0;
+  if (v!=fmn_abuf+fmn_abuf_wp) return; // ...the hell you did
+  fmn_abuf_wp+=c;
 }
 
 /* Update audio -- DAC callback.
@@ -166,7 +175,13 @@ static int16_t audio_next() {
 
 void TC5_Handler() {
   while(DAC->STATUS.bit.SYNCBUSY == 1);
-  int16_t sample=audio_next();
+  
+  int16_t sample=0;
+  if (fmn_abuf_rp!=fmn_abuf_wp) {
+    sample=fmn_abuf[fmn_abuf_rp++];
+    if (fmn_abuf_rp>=FMN_AUDIO_BUFFER_SIZE) fmn_abuf_rp=0;
+  }
+  
   DAC->DATA.reg=((sample>>6)+0x200)&0x3ff;
   while(DAC->STATUS.bit.SYNCBUSY == 1);
   TC5->COUNT16.INTFLAG.bit.MC0 = 1;

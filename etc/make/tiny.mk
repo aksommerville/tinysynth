@@ -11,7 +11,7 @@ tiny_TOOLCHAIN:=$(tiny_ARDUINO_HOME)/packages/arduino/tools/arm-none-eabi-gcc/$(
 
 # -Wp,-w disables warnings about redefined macros, which we need because digitalPinToInterrupt gets defined twice in the TinyCircuits headers.
 tiny_CCOPT:=-mcpu=cortex-m0plus -mthumb -c -g -Os -MMD -std=gnu11 -ffunction-sections -fdata-sections \
-  -nostdlib --param max-inline-insns-single=500 -Wp,-w
+  -nostdlib --param max-inline-insns-single=500 -Wp,-w -DTS_tiny=1
 tiny_CXXOPT:=$(filter-out -std=gnu11,$(tiny_CCOPT)) -std=gnu++11  -fno-threadsafe-statics -fno-rtti -fno-exceptions
 tiny_CCWARN:=-Wno-expansion-to-defined -Wno-redundant-decls
 tiny_CCDEF:=-DF_CPU=48000000L -DARDUINO=10819 -DARDUINO_SAMD_ZERO -DARDUINO_ARCH_SAMD -D__SAMD21G18A__ -DUSB_VID=0x03EB -DUSB_PID=0x8009 \

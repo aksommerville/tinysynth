@@ -20,6 +20,11 @@ void tinysynth_platform_init();
 uint8_t tinysynth_platform_read_input();
 void tinysynth_platform_send_framebuffer(const void *fb); // 96x64xbgr332
 
+// Returns a pointer to a buffer, and its length, that you should fill.
+// Call tinysynth_platform_filled_audio_buffer() after you've done so.
+uint16_t tinysynth_platform_get_audio_buffer(int16_t **dstpp);
+void tinysynth_platform_filled_audio_buffer(int16_t *v,uint16_t c);
+
 void usb_begin();
 void usb_send(const void *v,int c);
 int usb_read(void *dst,int dsta);

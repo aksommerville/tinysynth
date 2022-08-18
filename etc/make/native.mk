@@ -1,9 +1,9 @@
 # native.mk
 # Rules for building everything that runs on the PC.
 
-native_CC:=gcc -c -MMD -O3 -Isrc -Werror -Wimplicit
+native_CC:=gcc -c -MMD -O3 -Isrc -Werror -Wimplicit -DTS_native=1
 native_LD:=gcc
-native_LDPOST:=
+native_LDPOST:=-lm
 
 native_MIDDIR:=mid/native
 native_SRCFILES:=$(filter src/native/% src/common/%,$(SRCFILES))
