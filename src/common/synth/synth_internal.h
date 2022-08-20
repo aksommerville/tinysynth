@@ -3,6 +3,7 @@
 
 #include "synth.h"
 #include <string.h>
+#include <stdio.h>
 
 #define SYNTH_RATE_MIN 200
 #define SYNTH_RATE_MAX 200000
@@ -22,9 +23,18 @@ extern const int16_t synth_wave_0[];
 extern const int16_t synth_wave_1[];
 extern const int16_t synth_wave_2[];
 extern const int16_t synth_wave_3[];
+extern const int16_t synth_wave_4[];
 
 extern struct synth {
   uint32_t rate;
+  
+  // We hold on to the raw serial song, headers and all.
+  const uint8_t *song;
+  uint16_t songc;
+  uint16_t songp;
+  int32_t songdelay; // frames until the next song command
+  uint8_t songrepeat; // 0,1
+  uint16_t songtempo; // frames/tick, minimum 1 if a song is present
   
   struct synth_channel {
     uint8_t pid;
@@ -51,6 +61,7 @@ extern struct synth {
     
     uint32_t noterate; // Before bend.
     uint32_t rate; // Actual playback rate.
+    uint32_t ttl;
     
     // Everything else, usage is entirely up to the implementation.
     uint32_t p;
@@ -90,6 +101,7 @@ void synth_voice_setup(struct synth_voice *voice,uint8_t noteid,uint8_t velocity
 void synth_basicsquare_setup(struct synth_voice *voice,uint8_t noteid,uint8_t velocity,struct synth_channel *channel);
 void synth_wave_setup(struct synth_voice *voice,uint8_t noteid,uint8_t velocity,struct synth_channel *channel);
 void synth_mix_setup(struct synth_voice *voice,uint8_t noteid,uint8_t velocity,struct synth_channel *channel);
+void synth_fm_setup(struct synth_voice *voice,uint8_t noteid,uint8_t velocity,struct synth_channel *channel);
 
 //TODO square with envelope
 //TODO two waves with mix LFO

@@ -149,8 +149,9 @@ static void tiny_audio_init() {
  */
 
 // Buffer must be comfortably longer than a video frame (~367)
-#define FMN_AUDIO_BUFFER_SIZE 512
+#define FMN_AUDIO_BUFFER_SIZE 1024
 
+uint32_t tinysynth_underflow=0;
 static int16_t fmn_abuf[FMN_AUDIO_BUFFER_SIZE]={0};
 
 // (rp==wp) means empty.
@@ -180,6 +181,8 @@ void TC5_Handler() {
   if (fmn_abuf_rp!=fmn_abuf_wp) {
     sample=fmn_abuf[fmn_abuf_rp++];
     if (fmn_abuf_rp>=FMN_AUDIO_BUFFER_SIZE) fmn_abuf_rp=0;
+  } else {
+    tinysynth_underflow++;
   }
   
   DAC->DATA.reg=((sample>>6)+0x200)&0x3ff;

@@ -5,7 +5,7 @@
  
 void synth_channel_default(struct synth_channel *channel,uint8_t chid) {
   channel->pid=chid;
-  channel->volume=0x70;
+  channel->volume=0x40;
   channel->wheel=0x2000;
   channel->wheelrange=200;
   channel->vlo=0x1000;
@@ -25,10 +25,11 @@ void synth_voice_setup(struct synth_voice *voice,uint8_t noteid,uint8_t velocity
   voice->update=0;
   switch (channel->pid) {
   
-    case 0: synth_mix_setup(voice,noteid,velocity,channel); return;
+    case 0: synth_fm_setup(voice,noteid,velocity,channel); return;
     case 1: synth_basicsquare_setup(voice,noteid,velocity,channel); return;
     case 2: synth_wave_setup(voice,noteid,velocity,channel); return;
     case 3: synth_mix_setup(voice,noteid,velocity,channel); return;
+    case 4: synth_fm_setup(voice,noteid,velocity,channel); return;
   
   }
 }

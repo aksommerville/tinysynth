@@ -45,19 +45,182 @@ void synth_init(uint32_t rate) {
   synth_reset();
 }
 
-/* Update.
- * TODO Eventually we'll want to play songs from here.
+/* Update voices.
  */
-
-void synth_update(int16_t *v,int c) {
-  memset(v,0,c<<1);
+ 
+static void synth_update_voices(int16_t *v,int c) {
   struct synth_voice *voice=synth.voicev;
   uint8_t i=synth.voicec;
   for (;i-->0;voice++) {
     if (!voice->update) continue;
+    if (voice->ttl) {
+      if (voice->ttl<=c) {
+        if (voice->release) voice->release(voice);
+        else voice->update=0;
+        if (!voice->update) continue;
+      } else {
+        voice->ttl-=c;
+      }
+    }
     voice->update(v,c,voice);
   }
+}
+
+/* Update song.
+ * Call only when (songdelay==0).
+ * Processes the next event and advances (songp), possibly looping.
+ * Sets (songdelay) as needed. Caller should repeat until it becomes nonzero or (song) goes null.
+ * If we loop, we always delay one extra frame at the moment of the loop, to guarantee that we can't get stuck forever.
+ */
+ 
+static void synth_update_song() {
+  
+  // End of song?
+  if (synth.songp>=synth.songc) {
+   _eof_:;
+    synth_release_all();
+    if (synth.songrepeat) {
+      synth.songp=(synth.song[4]<<8)|synth.song[5];
+      synth.songdelay=1;
+    } else {
+      synth.song=0;
+      synth.songdelay=0;
+    }
+    return;
+  }
+  
+  // First byte tells us the opcode and implicitly the payload length.
+  uint8_t lead=synth.song[synth.songp++];
+  
+  // Full zero is EOF.
+  if (!lead) goto _eof_;
+  
+  // High bit zero, the rest is a delay in ticks.
+  if (!(lead&0x80)) {
+    synth.songdelay=synth.songtempo*lead;
+    return;
+  }
+  
+  // The rest are distinguished by their top 4 bits.
+  uint8_t a,b;
+  #define PAYLEN(c) { \
+    if (synth.songp>synth.songc-c) { \
+      synth.song=0; \
+      return; \
+    } \
+    if (c>=1) { \
+      a=synth.song[synth.songp++]; \
+      if (c>=2) { \
+        b=synth.song[synth.songp++]; \
+      } \
+    } \
+  }
+  switch (lead&0xf0) {
+    case 0x80: PAYLEN(2) synth_event_note_off(lead&0x0f,a,b); break;
+    case 0x90: PAYLEN(2) synth_event_note_on(lead&0x0f,a,b); break;
+    case 0xa0: PAYLEN(2) synth_event_note_adjust(lead&0x0f,a,b); break;
+    case 0xb0: PAYLEN(2) synth_event_control(lead&0x0f,a,b); break;
+    case 0xc0: PAYLEN(1) synth_event_program(lead&0x0f,a); break;
+    case 0xd0: PAYLEN(1) synth_event_pressure(lead&0x0f,a); break;
+    case 0xe0: PAYLEN(2) synth_event_wheel(lead&0x0f,(a|(b<<7))-8192); break;
+    case 0xf0: PAYLEN(2) {
+        uint8_t waveid=(lead>>1)&7;
+        uint8_t noteid=b&0x7f;
+        uint32_t ttl=(b>>7)|(a<<1)|((lead&1)<<9);
+        ttl*=synth.songtempo;
+        if (ttl>0xffff) ttl=0xffff;
+        synth_event_fireforget(waveid,noteid,ttl);
+      } break;
+  }
+  #undef PAYLEN
+}
+
+/* Update with a running song.
+ */
+ 
+static void synth_update_with_song(int16_t *v,int32_t c) {
+  while (c>0) {
+  
+    // Process song events until it acquires a delay.
+    while (synth.song&&!synth.songdelay) {
+      synth_update_song();
+    }
+    
+    // Song vanished. No worries, just run to completion.
+    if (synth.songdelay<1) {
+      synth_update_voices(v,c);
+      return;
+    }
+    
+    // Advance time by the smaller of (c,songdelay).
+    int32_t updc=synth.songdelay;
+    if (updc>c) updc=c;
+    synth_update_voices(v,updc);
+    v+=updc;
+    c-=updc;
+    synth.songdelay-=updc;
+  }
+}
+
+/* Update.
+ */
+
+void synth_update(int16_t *v,int c) {
+  if (c<1) return;
+  memset(v,0,c<<1);
+  if (synth.song) synth_update_with_song(v,c);
+  else synth_update_voices(v,c);
   while (synth.voicec&&!synth.voicev[synth.voicec-1].update) synth.voicec--;
+}
+
+/* Begin song.
+ */
+ 
+int8_t synth_play_song(const void *v,uint16_t c,uint8_t force,uint8_t repeat) {
+  
+  // Request for the current song without force is special.
+  if ((v==synth.song)&&(c==synth.songc)&&!force) {
+    synth.songrepeat=repeat;
+    return 0;
+  }
+  
+  // Requesting an empty song, ie none, is always legal.
+  if (!c) {
+    if (!synth.song) return 0;
+    synth_release_all();
+    synth.song=0;
+    synth.songp=0;
+    synth.songc=0;
+    synth.songdelay=0;
+    return 1;
+  }
+  
+  // Validate.
+  if (!v||(c<6)) return -1;
+  const uint8_t *SRC=v;
+  uint16_t tempo=(SRC[0]<<8)|SRC[1];
+  uint16_t startp=(SRC[2]<<8)|SRC[3];
+  uint16_t loopp=(SRC[4]<<8)|SRC[5];
+  if (startp<6) return -1;
+  if (loopp<startp) return -1;
+  if (loopp>=c) return -1;
+  
+  // Drop existing voices.
+  synth_release_all();
+  
+  // Start the new song, the easy part.
+  synth.song=v;
+  synth.songc=c;
+  synth.songp=startp;
+  synth.songdelay=0;
+  synth.songrepeat=repeat;
+  
+  // Calculate the new tempo, minimum 1 frame/tick.
+  // There is a real danger of overflow here, so cast to float first.
+  synth.songtempo=((float)tempo*(float)synth.rate)/1000000.0f;
+  if (synth.songtempo<1) synth.songtempo=1;
+  
+  return 1;
 }
 
 /* Three flavors of reset.
@@ -126,11 +289,11 @@ void synth_event_note_off(uint8_t chid,uint8_t noteid,uint8_t velocity) {
  
 static void synth_update_dummy(int16_t *v,int c,struct synth_voice *voice) {}
  
-void synth_event_note_on(uint8_t chid,uint8_t noteid,uint8_t velocity) {
+void *synth_event_note_on(uint8_t chid,uint8_t noteid,uint8_t velocity) {
 
   // Require a valid chid and noteid. velocity not so much.
-  if (chid>=SYNTH_CHANNEL_COUNT) return;
-  if (noteid>=0x80) return;
+  if (chid>=SYNTH_CHANNEL_COUNT) return 0;
+  if (noteid>=0x80) return 0;
   struct synth_channel *channel=synth.channelv+chid;
   
   //TODO Monophonic channels, do we want them?
@@ -146,7 +309,7 @@ void synth_event_note_on(uint8_t chid,uint8_t noteid,uint8_t velocity) {
       continue;
     }
     if ((voice->chid==chid)&&(voice->noteid==noteid)) {
-      return;
+      return 0;
     }
     if ((voice->chid==0xff)&&(voice->noteid==0xff)) {
       unaddressable=voice;
@@ -159,7 +322,7 @@ void synth_event_note_on(uint8_t chid,uint8_t noteid,uint8_t velocity) {
     synth.voicev[synth.voicec].update=synth_update_dummy; // in case the callback is running (TODO we need a safer plan)
     voice=synth.voicev+synth.voicec++;
   } else if (unaddressable) voice=unaddressable;
-  else return;
+  else return 0;
   
   // Set it up.
   voice->chid=chid;
@@ -167,7 +330,20 @@ void synth_event_note_on(uint8_t chid,uint8_t noteid,uint8_t velocity) {
   voice->noterate=synth_ratev[noteid];
   voice->rate=synth_bend_rate(voice->noterate,channel->wheel,channel->wheelrange);
   voice->p=0;
+  voice->ttl=0;
   synth_voice_setup(voice,noteid,velocity,channel);
+  return voice;
+}
+
+/* Fire-and-forget note.
+ */
+ 
+void synth_event_fireforget(uint8_t chid,uint8_t noteid,uint32_t ttl) {
+  struct synth_voice *voice=synth_event_note_on(chid,noteid,0x40);
+  if (!voice) return;
+  voice->ttl=ttl;
+  voice->chid=0xff;
+  voice->noteid=0xff;
 }
 
 /* Note Adjust.

@@ -68,11 +68,17 @@ struct io *io_new(const struct io_delegate *delegate) {
 /* Devid and direction from basename.
  */
  
-static int io_parse_basename(char *direction,const char *base,int basec) {
+static int io_parse_basename(char *direction,struct io *io,const char *base,int basec) {
   
-  if ((basec>=4)&&!memcmp(base,"midi",4)) { *direction='r'; base+=4; basec-=4; }
-  else if ((basec>=6)&&!memcmp(base,"ttyACM",6)) { *direction='w'; base+=6; basec-=6; }
-  else return -1;
+  if (io->delegate.use_oss_midi&&(basec>=4)&&!memcmp(base,"midi",4)) {
+    *direction='r';
+    base+=4;
+    basec-=4;
+  } else if (io->delegate.use_tiny&&(basec>=6)&&!memcmp(base,"ttyACM",6)) {
+    *direction='w';
+    base+=6;
+    basec-=6;
+  } else return -1;
   
   if ((basec<1)||(basec>9)) return -1; // 9 digit limit prevents overflow
   int devid=0;
@@ -153,7 +159,7 @@ static int io_scan(struct io *io) {
     int devid;
     int basec=0;
     while (de->d_name[basec]) basec++;
-    if ((devid=io_parse_basename(&direction,de->d_name,basec))<0) continue;
+    if ((devid=io_parse_basename(&direction,io,de->d_name,basec))<0) continue;
     if (io_find_file_by_devid(io,direction,devid)) continue;
     char path[1024];
     if (snprintf(path,sizeof(path),"%s/%.*s",IO_DIR,basec,de->d_name)>=sizeof(path)) continue;
@@ -189,7 +195,7 @@ static int io_update_inotify(struct io *io) {
     int basec=0;
     while ((basec<event->len)&&base[basec]) basec++;
     char direction;
-    int devid=io_parse_basename(&direction,base,basec);
+    int devid=io_parse_basename(&direction,io,base,basec);
     if (devid<0) continue;
     if (io_find_file_by_devid(io,direction,devid)) continue;
     char path[1024];

@@ -2,12 +2,14 @@
 
 #define envstage voice->bv[0]
 #define releasing voice->bv[1]
+#define modrate voice->bv[2] /* 0x10+log2(relative modulator rate) */
 #define envc voice->lv[0]
 #define envd voice->lv[1]
 #define level voice->lv[2]
 #define decc voice->lv[3]
 #define susl voice->lv[4]
 #define rlsc voice->lv[5]
+#define p0 voice->lv[7]
 #define wave0lv voice->pv[0]
 #define wave0 ((int16_t*)voice->pv[0])
 #define wave1lv voice->pv[1]
@@ -18,9 +20,11 @@
 /* Update.
  */
  
-void synth_mix_update(int16_t *v,int c,struct synth_voice *voice) {
-  uint8_t mod=chan->mod;
-  uint8_t invmod=0x7f-mod;
+void synth_fm_update(int16_t *v,int c,struct synth_voice *voice) {
+  uint32_t range=chan->mod<<10;
+  uint32_t moddp=voice->rate;
+  if (modrate<0x10) moddp>>=(0x10-modrate);
+  else moddp<<=(modrate-0x10);
   for (;c-->0;v++) {
   
     voice->p+=voice->rate;
@@ -28,9 +32,10 @@ void synth_mix_update(int16_t *v,int c,struct synth_voice *voice) {
     uint32_t p=voice->p>>SYNTH_WAVE_P_SHIFT;
     int32_t sample;
     
-    if (mod<=0) sample=wave0[p];
-    else if (mod>=0x7f) sample=wave1[p];
-    else sample=(wave0[p]*invmod+wave1[p]*mod)>>7;
+    p0+=moddp;
+    int16_t mod=wave0[((uint32_t)p0)>>SYNTH_WAVE_P_SHIFT];
+    uint32_t p1=voice->p+voice->rate+mod*range;
+    sample=wave1[p1>>SYNTH_WAVE_P_SHIFT];
     
     if (envc>0) {
       envc--;
@@ -70,23 +75,25 @@ void synth_mix_update(int16_t *v,int c,struct synth_voice *voice) {
 /* Release.
  */
  
-void synth_mix_release(struct synth_voice *voice) {
+void synth_fm_release(struct synth_voice *voice) {
   releasing=1;
 }
 
 /* Setup.
  */
  
-void synth_mix_setup(struct synth_voice *voice,uint8_t noteid,uint8_t velocity,struct synth_channel *channel) {
-  voice->update=synth_mix_update;
-  voice->release=synth_mix_release;
+void synth_fm_setup(struct synth_voice *voice,uint8_t noteid,uint8_t velocity,struct synth_channel *channel) {
+  voice->update=synth_fm_update;
+  voice->release=synth_fm_release;
   voice->adjust=0;
-  wave0lv=(void*)synth_wave_3;
-  wave1lv=(void*)synth_wave_0;
+  wave0lv=(void*)synth_wave_4;
+  wave1lv=(void*)synth_wave_4;
   envstage=0;
   level=0;
   releasing=0;
   chanlv=channel;
+  p0=0;
+  modrate=0x10;
   
   int32_t attack_time=(channel->atktlo*(0x7f-velocity)+channel->atkthi*velocity)>>7;
   int32_t release_time=(channel->rlstlo*(0x7f-velocity)+channel->rlsthi*velocity)>>7;

@@ -3,7 +3,7 @@
 
 native_CC:=gcc -c -MMD -O3 -Isrc -Werror -Wimplicit -DTS_native=1
 native_LD:=gcc
-native_LDPOST:=-lm
+native_LDPOST:=-lm -lasound -lpthread
 
 native_MIDDIR:=mid/native
 native_SRCFILES:=$(filter src/native/% src/common/%,$(SRCFILES))

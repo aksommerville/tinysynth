@@ -11,6 +11,7 @@
 
 static uint8_t fb[96*64]={0};
 static uint8_t console[CONCOLC*CONROWC]={0};
+static uint8_t show_underflow=0; // counts down
 
 static uint8_t pvinput=0;
 
@@ -62,6 +63,7 @@ static void console_print(const char *fmt,...) {
 void setup() {
   tinysynth_platform_init();
   synth_init(AUDIO_RATE);
+  synth_play_song(song_sevencircles,song_sevencircles_length,0,1);//XXX
   console_print("Ready.");
 }
 
@@ -81,7 +83,12 @@ static void draw_glyph(uint8_t *dst,uint8_t tileid,uint8_t color) {
 }
 
 static void render() {
-  memset(fb,0,sizeof(fb));
+
+  if (!show_underflow) memset(fb,0,sizeof(fb));
+  else if (show_underflow<10) memset(fb,0x01,sizeof(fb));
+  else if (show_underflow<20) memset(fb,0x02,sizeof(fb));
+  else memset(fb,0x03,sizeof(fb));
+  
   const uint8_t *dstrow=fb;
   const uint16_t rowstride=96*GLYPHH;
   const uint8_t *src=console;
@@ -142,6 +149,12 @@ void loop() {
   uint16_t bufc=tinysynth_platform_get_audio_buffer(&buf);
   synth_update(buf,bufc);
   tinysynth_platform_filled_audio_buffer(buf,bufc);
+  
+  if (tinysynth_underflow) {
+    tinysynth_underflow=0;
+    show_underflow=30;
+  }
+  if (show_underflow) show_underflow--;
 
   uint8_t input=tinysynth_platform_read_input();
   if (input!=pvinput) {

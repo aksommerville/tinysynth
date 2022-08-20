@@ -10,6 +10,8 @@ struct io;
 
 struct io_delegate {
   void *userdata;
+  int use_oss_midi;
+  int use_tiny;
   
   /* Notify that a file opened or closed.
    * (devid) is derived from its path, eg "/dev/midi4" and "/dev/ttyACM4" are both devid 4.
