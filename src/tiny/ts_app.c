@@ -18,6 +18,7 @@ static uint8_t pvinput=0;
 // (intake) will never contain more than a MIDI event, ie 3 bytes.
 static uint8_t intake[3];
 static uint8_t intakec=0;
+static uint8_t rstat=0;
 
 static void console_scroll() {
   memmove(console,console+CONCOLC,CONCOLC*(CONROWC-1));
@@ -63,7 +64,7 @@ static void console_print(const char *fmt,...) {
 void setup() {
   tinysynth_platform_init();
   synth_init(AUDIO_RATE);
-  synth_play_song(song_sevencircles,song_sevencircles_length,0,1);//XXX
+  //synth_play_song(song_sevencircles,song_sevencircles_length,0,1);//XXX
   console_print("Ready.");
 }
 
@@ -125,6 +126,9 @@ static void receive_byte(uint8_t src) {
   // High bit set, it's the start of an event. Drop anything we had before.
   if (src&0x80) {
     intakec=0;
+    rstat=src;
+  } else if (!intakec) {
+    intake[intakec++]=rstat;
   }
   
   // Add to intake.

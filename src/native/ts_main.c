@@ -30,6 +30,7 @@ static void rcvsig(int sigid) {
  * We are not distinguishing the various input channels, and assuming that Running Status and Note On Zero are not used.
  * And assuming that input chunks will break on event boundaries.
  * We assume a lot.
+ * Update 2022-08-30: Piping events through Chrome, it does use Running Status. Clean this up.
  */
  
 static int ts_receive_midi(const uint8_t *src,int srcc) {
@@ -38,34 +39,25 @@ static int ts_receive_midi(const uint8_t *src,int srcc) {
   
   // Let's assume that inputs always break on event boundaries and Running Status will not be used.
   if (alsa_lock(ts.alsa)>=0) {
+    const uint8_t *SRC=src;
     int srcp=0;
-    uint8_t a,b;
     while (srcp<srcc) {
-      #define A { if (srcp>=srcc) return 0; a=src[srcp++]; }
-      #define AB { if (srcp>srcc-2) return 0; a=src[srcp++]; b=src[srcp++]; }
-      uint8_t lead=src[srcp++];
-      switch (lead&0xf0) {
-        case 0x80: AB synth_event_note_off(lead&0x0f,a,b); break;
-        case 0x90: AB synth_event_note_on(lead&0x0f,a,b); break;
-        case 0xa0: AB synth_event_note_adjust(lead&0x0f,a,b); break;
-        case 0xb0: AB synth_event_control(lead&0x0f,a,b); break;
-        case 0xc0: A synth_event_program(lead&0x0f,a); break;
-        case 0xd0: A synth_event_pressure(lead&0x0f,a); break;
-        case 0xe0: AB synth_event_wheel(lead&0x0f,a|(b<<7)); break;
-        case 0xf0: switch (lead) {
-            case 0xf0: while (srcp<srcc) if (src[srcp++]==0xf7) break; break;
-            case 0xf8:
-            case 0xf9:
-            case 0xfa:
-            case 0xfb:
-            case 0xfc:
-            case 0xfd:
-            case 0xfe:
-            case 0xff: synth_event_realtime(lead); break;
-          } break;
+      struct ts_midi_event event;
+      int err=ts_midi_stream_read(&event,&ts.midi_stream_reader,SRC+srcp,srcc-srcp);
+      if (err<=0) { srcp++; continue; } // error. skip one byte and hope we eventually sync up
+      srcp+=err;
+      //fprintf(stderr,"PARSED %02x %02x %02x %02x\n",event.opcode,event.chid,event.a,event.b);
+      switch (event.opcode) {
+        case 0x80: synth_event_note_off(event.chid,event.a,event.b); break;
+        case 0x90: synth_event_note_on(event.chid,event.a,event.b); break;
+        case 0xa0: synth_event_note_adjust(event.chid,event.a,event.b); break;
+        case 0xb0: synth_event_control(event.chid,event.a,event.b); break;
+        case 0xc0: synth_event_program(event.chid,event.a); break;
+        case 0xd0: synth_event_pressure(event.chid,event.a); break;
+        case 0xe0: synth_event_wheel(event.chid,event.a|(event.b<<7)); break;
+        case 0xf8: case 0xf9: case 0xfa: case 0xfb:
+        case 0xfc: case 0xfd: case 0xfe: case 0xff: synth_event_realtime(event.opcode); break;
       }
-      #undef A
-      #undef AB
     }
     alsa_unlock(ts.alsa);
   }
@@ -95,7 +87,11 @@ static int cb_pcm_out(int16_t *v,int c,struct alsa *alsa) {
 }
 
 static int cb_midi_in(const void *src,int srcc,struct alsa *alsa) {
-  //fprintf(stderr,"%s srcc=%d\n",__func__,srcc);
+  /*
+  fprintf(stderr,"%s [%d]",__func__,srcc);
+  int i=0; for (;i<srcc;i++) fprintf(stderr," %02x",((uint8_t*)src)[i]);
+  fprintf(stderr,"\n");
+  /**/
   return ts_receive_midi(src,srcc);
 }
 
@@ -173,7 +169,7 @@ int main(int argc,char **argv) {
     }
     if (audio) {
       synth_init(alsa_get_rate(ts.alsa));
-      synth_play_song(song_sevencircles,song_sevencircles_length,0,1);//XXX
+      //synth_play_song(song_sevencircles,song_sevencircles_length,0,1);//XXX
     }
   }
   
